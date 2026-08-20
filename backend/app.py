@@ -469,6 +469,7 @@ def set_doctor_unavailable(doctor_id):
     }), 200
 
 
+
 # Patient Tracking Endpoints
 
 @app.route("/api/patient/appointments", methods=["GET"])
