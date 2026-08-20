@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react'
-import { loginUser, registerUser } from '../api/client'
+import { decodeToken, loginUser, registerUser, verifyOTP } from '../api/client'
 
 const AuthContext = createContext(null)
 
@@ -9,16 +9,17 @@ export function AuthProvider({ children }) {
     return storedUser ? JSON.parse(storedUser) : null
   })
   const [token, setToken] = useState(() => localStorage.getItem('clinic_token'))
+  const [pendingUserId, setPendingUserId] = useState(null)
 
   const persistSession = (payload) => {
+    const nextToken = payload.access_token || payload.token || null
+    const decodedToken = nextToken ? decodeToken(nextToken) : null
     const nextUser = payload.user || {
       id: payload.user_id,
       name: payload.name || payload.email?.split('@')[0],
       email: payload.email || '',
-      role: payload.role || 'patient',
+      role: payload.role || decodedToken?.role || 'patient',
     }
-
-    const nextToken = payload.token || null
 
     localStorage.setItem('clinic_user', JSON.stringify(nextUser))
     if (nextToken) {
@@ -29,6 +30,7 @@ export function AuthProvider({ children }) {
 
     setUser(nextUser)
     setToken(nextToken)
+    setPendingUserId(null)
     return nextUser
   }
 
@@ -37,8 +39,24 @@ export function AuthProvider({ children }) {
     return persistSession(payload)
   }
 
-  const register = async (name, email, password) => {
-    const payload = await registerUser({ name, email, password, role: 'patient' })
+  const register = async (name, email, phone, password, role = 'patient') => {
+    const payload = await registerUser({ name, email, phone, password, role })
+    // Store pending user_id for OTP verification phase
+    setPendingUserId(payload.user_id)
+    return payload.user_id
+  }
+
+  const verifyUserOTP = async (emailOTP, phoneOTP) => {
+    if (!pendingUserId) {
+      throw new Error('No pending verification')
+    }
+    
+    const payload = await verifyOTP({
+      user_id: pendingUserId,
+      email_otp: emailOTP,
+      phone_otp: phoneOTP,
+    })
+    
     return persistSession(payload)
   }
 
@@ -47,10 +65,11 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('clinic_token')
     setUser(null)
     setToken(null)
+    setPendingUserId(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, token, login, register, verifyUserOTP, logout, isAuthenticated: !!user, hasPendingOTP: !!pendingUserId }}>
       {children}
     </AuthContext.Provider>
   )

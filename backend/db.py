@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+
 import mysql.connector
 from mysql.connector import pooling
 
@@ -49,6 +50,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Create users table with all required columns
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -56,11 +58,15 @@ def init_db():
             name VARCHAR(120) NOT NULL,
             email VARCHAR(120) NOT NULL UNIQUE,
             password VARCHAR(256) NOT NULL,
-            role VARCHAR(20) NOT NULL
+            role VARCHAR(20) NOT NULL,
+            phone VARCHAR(20),
+            is_verified BOOLEAN DEFAULT FALSE
         )
         """
     )
 
+   
+    # Create appointments table with status column
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS appointments (
@@ -69,9 +75,64 @@ def init_db():
             patient_id INT NOT NULL,
             `date` VARCHAR(20) NOT NULL,
             `time` VARCHAR(20) NOT NULL,
+            status VARCHAR(20) DEFAULT 'scheduled',
             UNIQUE KEY uq_doctor_date_time (doctor_id, `date`, `time`),
             FOREIGN KEY (doctor_id) REFERENCES users(id),
             FOREIGN KEY (patient_id) REFERENCES users(id)
+        )
+        """
+    )
+
+   
+
+    # Create otp_verifications table
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS otp_verifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email_otp VARCHAR(6),
+            phone_otp VARCHAR(6),
+            expires_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_user_id (user_id)
+        )
+        """
+    )
+
+    # Create doctor_profiles table
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_profiles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            specialty VARCHAR(120) NOT NULL,
+            available_from TIME,
+            available_to TIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE KEY uq_user_id (user_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        ALTER TABLE doctor_profiles
+        MODIFY COLUMN available_from TIME,
+        MODIFY COLUMN available_to TIME
+        """
+    )
+
+    # Create doctor_unavailability table
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_unavailability (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            doctor_id INT NOT NULL,
+            unavailable_date DATE NOT NULL,
+            FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_doctor_id (doctor_id),
+            UNIQUE KEY uq_doctor_date (doctor_id, unavailable_date)
         )
         """
     )

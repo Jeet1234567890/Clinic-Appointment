@@ -14,29 +14,53 @@ const inputClass =
   'w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 transition-all focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'
 
 export default function AuthPage() {
-  const { login, register, isAuthenticated } = useAuth()
+  const { user, login, register, verifyUserOTP, isAuthenticated } = useAuth()
   const [isLogin, setIsLogin] = useState(true)
+  const [isAdminMode, setIsAdminMode] = useState(false)
+  const [showOTPVerification, setShowOTPVerification] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [emailOTP, setEmailOTP] = useState('')
+  const [phoneOTP, setPhoneOTP] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={user?.role === 'admin' ? '/admin' : '/dashboard'} replace />
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
+    // Handle OTP verification submission
+    if (showOTPVerification) {
+      if (!emailOTP || !phoneOTP) {
+        setError('Please enter both OTPs.')
+        return
+      }
+
+      setLoading(true)
+      try {
+        await verifyUserOTP(emailOTP, phoneOTP)
+      } catch (err) {
+        setError(err.message || 'OTP verification failed. Please try again.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
+    // Handle login/registration
     if (!email || !password) {
       setError('Please fill in all required fields.')
       return
     }
 
-    if (!isLogin && !name) {
-      setError('Please enter your name.')
+    if (!isLogin && (!name || !phone)) {
+      setError('Please enter your name and phone number.')
       return
     }
 
@@ -45,7 +69,9 @@ export default function AuthPage() {
       if (isLogin) {
         await login(email, password)
       } else {
-        await register(name, email, password)
+        await register(name, email, phone, password, isAdminMode ? 'admin' : 'patient')
+        // Show OTP verification screen after successful registration
+        setShowOTPVerification(true)
       }
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -104,25 +130,19 @@ export default function AuthPage() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-100 p-8 sm:p-10">
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-slate-900">
-                {isLogin ? 'Welcome back' : 'Create your account'}
-              </h2>
-              <p className="text-slate-500 mt-1.5">
-                {isLogin
-                  ? 'Sign in to manage your appointments'
-                  : 'Register to start booking with our doctors'}
-              </p>
-            </div>
-
             <div className="flex p-1 rounded-xl bg-slate-100 mb-8">
-              {['Sign in', 'Register'].map((label, i) => {
-                const active = (i === 0) === isLogin
+              {['Patient', 'Admin'].map((label, i) => {
+                const active = (i === 1) === isAdminMode
                 return (
                   <button
                     key={label}
                     type="button"
-                    onClick={() => { setIsLogin(i === 0); setError('') }}
+                    onClick={() => {
+                      setIsAdminMode(i === 1)
+                      setIsLogin(true)
+                      setShowOTPVerification(false)
+                      setError('')
+                    }}
                     className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
                       active
                         ? 'bg-white text-slate-900 shadow-sm'
@@ -135,60 +155,167 @@ export default function AuthPage() {
               })}
             </div>
 
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-slate-900">
+                {showOTPVerification
+                  ? 'Verify your account'
+                  : isLogin
+                    ? 'Welcome back'
+                    : 'Create your account'}
+              </h2>
+              <p className="text-slate-500 mt-1.5">
+                {showOTPVerification
+                  ? 'Enter the OTPs sent to your email and phone'
+                  : isLogin
+                    ? isAdminMode
+                      ? 'Sign in to manage the clinic'
+                      : 'Sign in to manage your appointments'
+                    : isAdminMode
+                      ? 'Register a clinic administrator account'
+                      : 'Register to start booking with our doctors'}
+              </p>
+            </div>
+
+            {!showOTPVerification && (
+              <div className="flex p-1 rounded-xl bg-slate-100 mb-8">
+                {['Sign in', 'Register'].map((label, i) => {
+                  const active = (i === 0) === isLogin
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => { setIsLogin(i === 0); setError('') }}
+                      className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
+                        active
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-5">
-              {!isLogin && (
-                <div>
-                  <label htmlFor="name" className="block text-sm font-semibold text-slate-700 mb-2">
-                    Full name
-                  </label>
-                  <input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="John Doe"
-                    className={inputClass}
-                  />
-                </div>
+              {showOTPVerification ? (
+                <>
+                  <div>
+                    <label htmlFor="emailOTP" className="block text-sm font-semibold text-slate-700 mb-2">
+                      Email OTP
+                    </label>
+                    <input
+                      id="emailOTP"
+                      type="text"
+                      inputMode="numeric"
+                      value={emailOTP}
+                      onChange={(e) => setEmailOTP(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      maxLength="6"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="phoneOTP" className="block text-sm font-semibold text-slate-700 mb-2">
+                      SMS OTP
+                    </label>
+                    <input
+                      id="phoneOTP"
+                      type="text"
+                      inputMode="numeric"
+                      value={phoneOTP}
+                      onChange={(e) => setPhoneOTP(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      maxLength="6"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-semibold rounded-xl hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-500/25 focus:outline-none focus:ring-4 focus:ring-teal-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Verifying...' : 'Verify Account'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {!isLogin && (
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-semibold text-slate-700 mb-2">
+                        Full name
+                      </label>
+                      <input
+                        id="name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="John Doe"
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
+                      Email address
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {!isLogin && (
+                    <div>
+                      <label htmlFor="phone" className="block text-sm font-semibold text-slate-700 mb-2">
+                        Phone number
+                      </label>
+                      <input
+                        id="phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+1 (555) 000-0000"
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
+                      Password
+                    </label>
+                    <input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {error && <Alert variant="error">{error}</Alert>}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-semibold rounded-xl hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-500/25 focus:outline-none focus:ring-4 focus:ring-teal-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Please wait...' : isLogin ? 'Sign in to your account' : 'Create account'}
+                  </button>
+                </>
               )}
 
-              <div>
-                <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className={inputClass}
-                />
-              </div>
-
-              {error && <Alert variant="error">{error}</Alert>}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-semibold rounded-xl hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-500/25 focus:outline-none focus:ring-4 focus:ring-teal-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Please wait...' : isLogin ? 'Sign in to your account' : 'Create account'}
-              </button>
+              {error && showOTPVerification && <Alert variant="error">{error}</Alert>}
             </form>
           </div>
 

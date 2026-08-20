@@ -27,6 +27,21 @@ function formatDisplayDate(dateStr) {
   })
 }
 
+function timeToMinutes(value) {
+  if (!value) return null
+  const [hours, minutes] = value.split(':').map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+  return hours * 60 + minutes
+}
+
+function slotToMinutes(slot) {
+  const [time, period] = slot.split(' ')
+  let [hours, minutes] = time.split(':').map(Number)
+  if (period === 'AM' && hours === 12) hours = 0
+  if (period === 'PM' && hours !== 12) hours += 12
+  return hours * 60 + minutes
+}
+
 export default function BookingPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -44,6 +59,16 @@ export default function BookingPage() {
     [doctors, doctorId]
   )
 
+  const availableTimeSlots = useMemo(() => {
+    const start = timeToMinutes(selectedDoctor?.available_from)
+    const end = timeToMinutes(selectedDoctor?.available_to)
+    if (start === null || end === null) return []
+    return TIME_SLOTS.filter((slot) => {
+      const slotMinutes = slotToMinutes(slot)
+      return slotMinutes >= start && slotMinutes <= end
+    })
+  }, [selectedDoctor])
+
   const currentStep = !doctorId ? 0 : !date ? 1 : 2
 
   useEffect(() => {
@@ -55,7 +80,10 @@ export default function BookingPage() {
       .catch(() => setError('Failed to load doctors. Please try again later.'))
       .finally(() => setLoadingDoctors(false))
   }, [])
-
+  
+  useEffect(() => {
+    if (time && !availableTimeSlots.includes(time)) setTime('')
+  }, [availableTimeSlots, time])
   const today = new Date().toISOString().split('T')[0]
 
   const handleSubmit = async (e) => {
@@ -226,7 +254,11 @@ export default function BookingPage() {
                     Pick a Time Slot
                   </legend>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {TIME_SLOTS.map((slot) => {
+                    {availableTimeSlots.length === 0 ? (
+                      <p className="col-span-full text-sm text-slate-500 bg-slate-50 rounded-xl p-4">
+                        Select a doctor with configured availability to view time slots.
+                      </p>
+                    ) : availableTimeSlots.map((slot) => {
                       const selected = time === slot
                       const disabled = !date
                       return (
